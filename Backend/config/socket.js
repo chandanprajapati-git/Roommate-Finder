@@ -10,12 +10,12 @@ const onlineUsers = new Map();
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-  origin: "http://localhost:5173",
-  methods: ["GET", "POST"],
-  credentials: true
-},
+      origin: "http://localhost:5173",
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
   });
-  
+
   io.use((socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -37,7 +37,7 @@ const initSocket = (server) => {
     if (!onlineUsers.has(userId)) {
       onlineUsers.set(userId, new Set());
     }
-    onlineUsers.get(userId).add(socket.id)
+    onlineUsers.get(userId).add(socket.id);
     io.emit("onlineUsers", Array.from(onlineUsers.keys()));
 
     socket.on("getOnlineUsers", () => {
@@ -57,9 +57,7 @@ const initSocket = (server) => {
           await message.save();
         }
 
-        const senderSockets = onlineUsers.get(
-          message.sender.toString()
-        );
+        const senderSockets = onlineUsers.get(message.sender.toString());
 
         if (senderSockets) {
           senderSockets.forEach((socketId) => {
@@ -84,12 +82,12 @@ const initSocket = (server) => {
           return;
         }
 
-        message.status = "read";
-        await message.save();
+        if (message.status !== "read") {
+          message.status = "read";
+          await message.save();
+        }
 
-        const senderSockets = onlineUsers.get(
-          message.sender.toString()
-        );
+        const senderSockets = onlineUsers.get(message.sender.toString());
 
         if (senderSockets) {
           senderSockets.forEach((socketId) => {
@@ -123,4 +121,4 @@ const initSocket = (server) => {
 };
 
 const getIO = () => io;
-module.exports = {initSocket,getIO,onlineUsers};
+module.exports = { initSocket, getIO, onlineUsers };
