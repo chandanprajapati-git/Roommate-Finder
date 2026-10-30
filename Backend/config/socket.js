@@ -1,3 +1,4 @@
+
 const { Server } = require("socket.io");
 const Message = require("../model/message");
 const jwt = require("jsonwebtoken");
@@ -16,14 +17,18 @@ const initSocket = (server) => {
     },
   });
 
+  // Socket authentication
   io.use((socket, next) => {
     try {
       const token = socket.handshake.auth.token;
+
       if (!token) {
         return next(new Error("Authentication token missing"));
       }
+
       const decoded = jwt.verify(token, process.env.SECRET_KEY);
       socket.userId = decoded.userId;
+
       next();
     } catch (error) {
       next(new Error("Invalid or expired token"));
@@ -32,32 +37,79 @@ const initSocket = (server) => {
 
   io.on("connection", (socket) => {
     const userId = socket.userId.toString();
+
     console.log("User connected:", userId);
 
+    // Register online user
     if (!onlineUsers.has(userId)) {
       onlineUsers.set(userId, new Set());
     }
+
     onlineUsers.get(userId).add(socket.id);
+
     io.emit("onlineUsers", Array.from(onlineUsers.keys()));
 
+    // Get online users
     socket.on("getOnlineUsers", () => {
       socket.emit("onlineUsers", Array.from(onlineUsers.keys()));
     });
+
+    // -----------------------------
+    // TYPING INDICATOR
+    // -----------------------------
+
+    // User started typing
+    socket.on("typing", (receiverId) => {
+      if (!receiverId) return;
+
+      const receiverSockets = onlineUsers.get(receiverId.toString());
+
+      if (receiverSockets) {
+        receiverSockets.forEach((socketId) => {
+          io.to(socketId).emit("userTyping", {
+            userId,
+          });
+        });
+      }
+    });
+
+    // User stopped typing
+    socket.on("stopTyping", (receiverId) => {
+      if (!receiverId) return;
+
+      const receiverSockets = onlineUsers.get(receiverId.toString());
+
+      if (receiverSockets) {
+        receiverSockets.forEach((socketId) => {
+          io.to(socketId).emit("userStoppedTyping", {
+            userId,
+          });
+        });
+      }
+    });
+
+    // -----------------------------
+    // MESSAGE DELIVERED STATUS
+    // -----------------------------
 
     socket.on("messageDelivered", async (messageId) => {
       try {
         const message = await Message.findById(messageId);
 
         if (!message) return;
+
         if (message.receiver.toString() !== userId) {
           return;
         }
+
         if (message.status === "sent") {
           message.status = "delivered";
           await message.save();
         }
 
-        const senderSockets = onlineUsers.get(message.sender.toString());
+        const senderSockets = onlineUsers.get(
+          message.sender.toString()
+        );
 
         if (senderSockets) {
           senderSockets.forEach((socketId) => {
@@ -67,17 +119,23 @@ const initSocket = (server) => {
             });
           });
         }
+
         console.log("Message delivered:", messageId);
       } catch (error) {
         console.log("Delivery error:", error.message);
       }
     });
 
+    // -----------------------------
+    // MESSAGE READ STATUS
+    // -----------------------------
+
     socket.on("messageRead", async (messageId) => {
       try {
         const message = await Message.findById(messageId);
 
         if (!message) return;
+
         if (message.receiver.toString() !== userId) {
           return;
         }
@@ -87,7 +145,9 @@ const initSocket = (server) => {
           await message.save();
         }
 
-        const senderSockets = onlineUsers.get(message.sender.toString());
+        const senderSockets = onlineUsers.get(
+          message.sender.toString()
+        );
 
         if (senderSockets) {
           senderSockets.forEach((socketId) => {
@@ -97,28 +157,42 @@ const initSocket = (server) => {
             });
           });
         }
+
         console.log("Message read:", messageId);
       } catch (error) {
         console.log("Read error:", error.message);
       }
     });
 
+    // -----------------------------
+    // DISCONNECT
+    // -----------------------------
+
     socket.on("disconnect", () => {
       const userSockets = onlineUsers.get(userId);
 
       if (userSockets) {
         userSockets.delete(socket.id);
+
         if (userSockets.size === 0) {
           onlineUsers.delete(userId);
         }
       }
+
       io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+
       console.log("User disconnected:", userId);
       console.log("Online Users:", onlineUsers);
     });
   });
+
   return io;
 };
 
 const getIO = () => io;
-module.exports = { initSocket, getIO, onlineUsers };
+
+module.exports = {
+  initSocket,
+  getIO,
+  onlineUsers,
+};
