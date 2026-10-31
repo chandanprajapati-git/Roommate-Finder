@@ -17,6 +17,8 @@ import { API_BASE_URL as API } from "../config/api.js";
 const getId = (value) => {
   return typeof value === "object" ? value?._id : value;
 };
+const getPerformanceTime = () => window.performance.now();
+const getIsoTimestamp = () => new Date().toISOString();
 
 const Chat = () => {
   const [users, setUsers] = useState([]);
@@ -49,6 +51,7 @@ const Chat = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
 
   const bottomRef = useRef(null);
   const socketRef = useRef(null);
@@ -283,11 +286,11 @@ const Chat = () => {
     });
 
     // UPDATE MESSAGE STATUS
-    socket.on("messageStatusUpdated", ({ messageId, status }) => {
+    socket.on("messageStatusUpdated", ({ messageId, clientMessageId, status }) => {
       console.info("Chat message status updated:", { messageId: String(messageId), status });
       setMessages((prev) =>
         prev.map((msg) =>
-          String(msg._id) === String(messageId)
+          String(msg._id) === String(messageId) || (clientMessageId && msg.clientMessageId === clientMessageId)
             ? { ...msg, status }
             : msg
         )
@@ -624,105 +627,120 @@ const Chat = () => {
   };
 
   // SEND MESSAGE
-  const sendMessage = async (e, contentOverride) => {
-    e?.preventDefault();
-    const messageContent = typeof contentOverride === "string" ? contentOverride : message;
-    const fileToSend = typeof contentOverride === "string" ? null : selectedFile;
+  const submitPendingMessage = async (pendingMessage) => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setMessages((previous) => previous.map((item) => item._id === pendingMessage._id
+      ? { ...item, status: "sending", sendError: null }
+      : item));
 
-    if (
-      (!messageContent.trim() && !fileToSend) ||
-      !selectedUser ||
-      sending
-    ) {
-      return;
-    }
-
-    stopTyping();
-
+    const startedAt = getPerformanceTime();
     try {
-      setSending(true);
+      let attachment = pendingMessage.uploadedAttachment || null;
 
-      let attachment = null;
-
-      // UPLOAD ATTACHMENT TO CLOUDINARY
-      if (fileToSend) {
+      if (pendingMessage.pendingFile && !attachment) {
+        const uploadStartedAt = getPerformanceTime();
         const formData = new FormData();
-        formData.append("image", fileToSend);
-
-        const uploadResponse = await axios.post(
-          `${API}/upload`,
-          formData,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
+        formData.append("image", pendingMessage.pendingFile);
+        const uploadResponse = await axios.post(`${API}/upload`, formData, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        console.info("Chat attachment upload completed:", { durationMs: Math.round(getPerformanceTime() - uploadStartedAt) });
         const fileUrl = uploadResponse.data.fileUrl;
+        if (!fileUrl) throw new Error("File upload failed.");
 
-        if (!fileUrl) {
-          throw new Error("File upload failed.");
-        }
-
-        const kind = fileToSend.type.startsWith("image/") ? "image"
-          : fileToSend.type.startsWith("video/") ? "video"
-            : fileToSend.type.startsWith("audio/") ? "audio" : "document";
+        const file = pendingMessage.pendingFile;
         attachment = {
           url: fileUrl,
-          name: fileToSend.name,
-          mimeType: fileToSend.type,
-          kind,
+          name: file.name,
+          mimeType: file.type,
+          kind: file.type.startsWith("image/") ? "image"
+            : file.type.startsWith("video/") ? "video"
+              : file.type.startsWith("audio/") ? "audio" : "document",
           publicId: uploadResponse.data.publicId,
           resourceType: uploadResponse.data.resourceType,
         };
+        setMessages((previous) => previous.map((item) => item._id === pendingMessage._id
+          ? { ...item, uploadedAttachment: attachment }
+          : item));
       }
 
-      // SAVE MESSAGE IN DATABASE
-      const response = await axios.post(
-        `${API}/message`,
-        {
-          receiver: selectedUser._id,
-          message: messageContent.trim(),
-          image: attachment?.kind === "image" ? attachment.url : null,
-          attachment,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const newMessage = response.data.data;
-
-      setMessages((prev) => {
-        const alreadyExists = prev.some(
-          (msg) => String(msg._id) === String(newMessage._id)
-        );
-
-        if (alreadyExists) return prev;
-
-        return [...prev, newMessage];
+      const apiStartedAt = getPerformanceTime();
+      const response = await axios.post(`${API}/message`, {
+        receiver: pendingMessage.receiver,
+        message: pendingMessage.message,
+        image: attachment?.kind === "image" ? attachment.url : null,
+        attachment,
+        clientMessageId: pendingMessage.clientMessageId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
+      console.info("Chat message API confirmed:", { clientMessageId: pendingMessage.clientMessageId, durationMs: Math.round(getPerformanceTime() - apiStartedAt), totalDurationMs: Math.round(getPerformanceTime() - startedAt) });
 
-      if (typeof contentOverride !== "string") {
-        setMessage("");
-        setSelectedFile(null);
-        if (messageInputRef.current) messageInputRef.current.style.height = "44px";
-        if (photosInputRef.current) photosInputRef.current.value = "";
-        if (documentsInputRef.current) documentsInputRef.current.value = "";
-      }
+      const savedMessage = response.data.data;
+      setMessages((previous) => previous.map((item) => {
+        if (item._id !== pendingMessage._id) return item;
+        const currentStatus = ["delivered", "read"].includes(item.status) ? item.status : null;
+        return { ...savedMessage, status: currentStatus || savedMessage.status || "sent" };
+      }));
+      if (pendingMessage.previewUrl) URL.revokeObjectURL(pendingMessage.previewUrl);
     } catch (error) {
-      console.log(
-        "Send Message Error:",
-        error.response?.data || error
-      );
-
+      console.error("Chat message send failed:", { clientMessageId: pendingMessage.clientMessageId, durationMs: Math.round(getPerformanceTime() - startedAt), message: error.response?.data?.message || error.message });
+      setMessages((previous) => previous.map((item) => item._id === pendingMessage._id
+        ? { ...item, status: "failed", sendError: error.response?.data?.message || error.message || "Unable to send message" }
+        : item));
       notify(error.response?.data?.message || error.message || "Unable to send message", "error");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
+  };
+
+  const sendMessage = (e, contentOverride) => {
+    e?.preventDefault();
+    const messageContent = typeof contentOverride === "string" ? contentOverride : message;
+    const fileToSend = typeof contentOverride === "string" ? null : selectedFile;
+    if ((!messageContent.trim() && !fileToSend) || !selectedUser || sendingRef.current) return;
+
+    stopTyping();
+    const clientMessageId = crypto.randomUUID();
+    const previewUrl = fileToSend ? URL.createObjectURL(fileToSend) : null;
+    const pendingMessage = {
+      _id: `pending:${clientMessageId}`,
+      clientMessageId,
+      sender: myId,
+      receiver: selectedUser._id,
+      message: messageContent.trim(),
+      image: null,
+      attachment: fileToSend ? {
+        url: previewUrl,
+        name: fileToSend.name,
+        mimeType: fileToSend.type,
+        kind: fileToSend.type.startsWith("image/") ? "image"
+          : fileToSend.type.startsWith("video/") ? "video"
+            : fileToSend.type.startsWith("audio/") ? "audio" : "document",
+      } : null,
+      pendingFile: fileToSend || null,
+      previewUrl,
+      status: "sending",
+      createdAt: getIsoTimestamp(),
+    };
+
+    setMessages((previous) => [...previous, pendingMessage]);
+    if (typeof contentOverride !== "string") {
+      setMessage("");
+      setSelectedFile(null);
+      if (messageInputRef.current) messageInputRef.current.style.height = "44px";
+      if (photosInputRef.current) photosInputRef.current.value = "";
+      if (documentsInputRef.current) documentsInputRef.current.value = "";
+    }
+    void submitPendingMessage(pendingMessage);
+  };
+
+  const retryMessage = (pendingMessage) => {
+    if (pendingMessage.status !== "failed") return;
+    void submitPendingMessage(pendingMessage);
   };
 
   const removeFriend = async () => {
@@ -819,6 +837,7 @@ const Chat = () => {
 
   // MESSAGE STATUS SYMBOL
   const getStatusSymbol = (status) => {
+    if (status === "sending") return "◷";
     if (status === "read") return "✓✓";
     if (status === "delivered") return "✓✓";
     return "✓";
@@ -1236,13 +1255,15 @@ const Chat = () => {
                                 </span>
 
                                 {mine && (
-                                  <span
-                                    className={`message-status ${
-                                      msg.status || "sent"
-                                    }`}
-                                  >
-                                    {getStatusSymbol(msg.status)}
-                                  </span>
+                                  msg.status === "failed" ? (
+                                    <button type="button" className="message-status failed" onClick={() => retryMessage(msg)} disabled={sending} title={msg.sendError || "Message failed. Retry sending."} aria-label="Message failed. Retry sending">
+                                      Failed · Retry
+                                    </button>
+                                  ) : (
+                                    <span className={`message-status ${msg.status || "sent"}`} aria-label={msg.status === "sending" ? "Sending" : msg.status || "Sent"}>
+                                      {getStatusSymbol(msg.status)}
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>

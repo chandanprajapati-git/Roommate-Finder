@@ -8,6 +8,7 @@ const uploadRoute = require("./routes/uploadRoute");
 const app = express();
 const http = require("http");
 const { initSocket } = require("./config/socket");
+const Message = require("./model/message");
 
 const userRoute = require("./routes/userRoute");
 const requestRoute = require("./routes/requestRoute");
@@ -30,7 +31,13 @@ app.use(
 app.use(express.json());
 
 initSocket(server);
-dbConnection();
+const startServer = async () => {
+  await dbConnection();
+  await Message.init();
+  server.listen(PORT, () => {
+    console.log(`Server Started on Port number ${PORT}`);
+  });
+};
 
 app.use("/api/message", messageRoute);
 app.use("/api/request", requestRoute);
@@ -43,7 +50,7 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 5001;
-
-server.listen(PORT, () => {
-  console.log(`Server Started on Port number ${PORT}`);
+startServer().catch((error) => {
+  console.error("Server startup aborted because the database is unavailable:", error.message);
+  process.exit(1);
 });

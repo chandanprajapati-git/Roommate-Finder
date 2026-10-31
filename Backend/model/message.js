@@ -15,6 +15,12 @@ const messageSchema = new Schema(
       required: true
     },
 
+    clientMessageId: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+
     message: {
       type: String,
       trim: true,
@@ -44,6 +50,11 @@ const messageSchema = new Schema(
   {
     timestamps: true
   }
+);
+
+messageSchema.index(
+  { sender: 1, clientMessageId: 1 },
+  { unique: true, partialFilterExpression: { clientMessageId: { $type: "string" } } }
 );
 
 messageSchema.pre("validate", function () {

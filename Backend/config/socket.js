@@ -342,6 +342,7 @@ const initSocket = (server) => {
           senderSockets.forEach((socketId) => {
             io.to(socketId).emit("messageStatusUpdated", {
               messageId: message._id,
+              clientMessageId: message.clientMessageId,
               status: message.status,
             });
           });
@@ -387,6 +388,7 @@ const initSocket = (server) => {
           senderSockets.forEach((socketId) => {
             io.to(socketId).emit("messageStatusUpdated", {
               messageId: message._id,
+              clientMessageId: message.clientMessageId,
               status: "read",
             });
           });

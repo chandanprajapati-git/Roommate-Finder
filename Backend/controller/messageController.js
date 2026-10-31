@@ -4,11 +4,26 @@ const Request = require("../model/request");
 const User = require("../model/user");
 const { getIO, onlineUsers, emitUnreadCounts } = require("../config/socket");
 const cloudinary = require("../config/cloudinary");
+const { performance } = require("node:perf_hooks");
+
+const deliverToConnectedSockets = (message, receiverId) => {
+  const io = getIO();
+  const receiverSockets = onlineUsers.get(String(receiverId));
+  if (!io || !receiverSockets?.size) {
+    console.info("Message recipient is currently offline:", { messageId: message._id.toString(), receiverId: String(receiverId) });
+    return;
+  }
+
+  const emitStartedAt = performance.now();
+  receiverSockets.forEach((socketId) => io.to(socketId).emit("receiveMessage", message));
+  console.info("Message emitted to receiver:", { messageId: message._id.toString(), receiverId: String(receiverId), socketCount: receiverSockets.size, emitDurationMs: Math.round(performance.now() - emitStartedAt) });
+};
 
 const sendMessage = async (req, res) => {
+  const startedAt = performance.now();
   try {
     const sender = req.userId;
-    const { receiver, message, image, attachment } = req.body;
+    const { receiver, message, image, attachment, clientMessageId } = req.body;
 
     if (!receiver || (!message?.trim() && !image && !attachment?.url)) {
       return res.status(400).json({
@@ -22,15 +37,25 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    const receiverUser = await User.findById(receiver);
-
-    if (!receiverUser) {
-      return res.status(404).json({
-        message: "Receiver not found",
-      });
+    if (clientMessageId !== undefined && (typeof clientMessageId !== "string" || !clientMessageId.trim() || clientMessageId.length > 100)) {
+      return res.status(400).json({ message: "Invalid client message ID" });
     }
 
-    const senderUser = await User.findById(sender).select("blockedUsers");
+    const validationStartedAt = performance.now();
+    const [receiverUser, senderUser, acceptedRequest] = await Promise.all([
+      User.findById(receiver).select("blockedUsers"),
+      User.findById(sender).select("blockedUsers"),
+      Request.findOne({
+        status: "accepted",
+        $or: [{ sender, receiver }, { sender: receiver, receiver: sender }],
+      }).select("_id"),
+    ]);
+    const validationDurationMs = Math.round(performance.now() - validationStartedAt);
+
+    if (!receiverUser) {
+      return res.status(404).json({ message: "Receiver not found" });
+    }
+
     if (
       receiverUser.blockedUsers?.some((id) => id.toString() === sender.toString()) ||
       senderUser?.blockedUsers?.some((id) => id.toString() === receiver.toString())
@@ -38,53 +63,48 @@ const sendMessage = async (req, res) => {
       return res.status(403).json({ message: "You cannot message this user" });
     }
 
-    const acceptedRequest = await Request.findOne({
-      status: "accepted",
-      $or: [
-        { sender, receiver },
-        { sender: receiver, receiver: sender },
-      ],
-    });
-
     if (!acceptedRequest) {
       return res.status(403).json({
         message: "Chat is allowed only when request is accepted",
       });
     }
 
-    const newMessage = await Message.create({
-      sender,
-      receiver,
-      message: message?.trim() || "",
-      image: image || null,
-      attachment: attachment?.url ? {
-        url: attachment.url,
-        name: attachment.name || "Attachment",
-        mimeType: attachment.mimeType || "application/octet-stream",
-        kind: ["image", "video", "audio", "document"].includes(attachment.kind)
-          ? attachment.kind
-          : "document",
-        publicId: attachment.publicId || "",
-        resourceType: ["image", "video", "raw"].includes(attachment.resourceType)
-          ? attachment.resourceType
-          : null,
-      } : undefined,
-    });
+    const saveStartedAt = performance.now();
+    let newMessage;
+    let reusedExistingMessage = false;
+    try {
+      newMessage = await Message.create({
+        sender,
+        receiver,
+        clientMessageId,
+        message: message?.trim() || "",
+        image: image || null,
+        attachment: attachment?.url ? {
+          url: attachment.url,
+          name: attachment.name || "Attachment",
+          mimeType: attachment.mimeType || "application/octet-stream",
+          kind: ["image", "video", "audio", "document"].includes(attachment.kind)
+            ? attachment.kind
+            : "document",
+          publicId: attachment.publicId || "",
+          resourceType: ["image", "video", "raw"].includes(attachment.resourceType)
+            ? attachment.resourceType
+            : null,
+        } : undefined,
+      });
+    } catch (error) {
+      // A parallel retry may pass the lookup above and race on the unique key.
+      if (error.code !== 11000 || !clientMessageId) throw error;
+      newMessage = await Message.findOne({ sender, clientMessageId });
+      if (!newMessage) throw error;
+      reusedExistingMessage = true;
+    }
+    const saveDurationMs = Math.round(performance.now() - saveStartedAt);
 
-    console.info("Message saved successfully:", { messageId: newMessage._id.toString(), senderId: sender.toString(), receiverId: receiver.toString() });
+    console.info(reusedExistingMessage ? "Idempotent message request reused:" : "Message saved successfully:", { messageId: newMessage._id.toString(), senderId: sender.toString(), receiverId: receiver.toString(), validationDurationMs, saveDurationMs, totalDurationMs: Math.round(performance.now() - startedAt) });
 
     // Persist first, then emit to every active session for this user.
-    const io = getIO();
-    const receiverSockets = onlineUsers.get(receiver.toString());
-
-    if (io && receiverSockets?.size) {
-      receiverSockets.forEach((socketId) => {
-        io.to(socketId).emit("receiveMessage", newMessage);
-      });
-      console.info("Message emitted to receiver:", { messageId: newMessage._id.toString(), receiverId: receiver.toString(), socketCount: receiverSockets.size });
-    } else {
-      console.info("Message recipient is currently offline:", { messageId: newMessage._id.toString(), receiverId: receiver.toString() });
-    }
+    deliverToConnectedSockets(newMessage, receiver);
 
     return res.status(200).json({
       message: "Message sent successfully",
