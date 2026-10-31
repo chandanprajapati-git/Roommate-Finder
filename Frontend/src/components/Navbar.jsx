@@ -7,7 +7,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useSocket } from "../contexts/SocketContext";
 import "./Navbar.css";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 
 const Navbar = () => {
   const navigate = useNavigate();

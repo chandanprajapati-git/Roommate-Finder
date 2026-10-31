@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import './Login.css'
 import { useFeedback } from "../hooks/useFeedback";
+import { API_BASE_URL } from "../config/api.js";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -19,7 +20,7 @@ function Login() {
       setLoading(true);
 
       const response = await axios.post(
-        "http://localhost:5000/api/user/login",
+        `${API_BASE_URL}/user/login`,
         { email, password },
       );
 

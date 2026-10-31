@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 
 export function useRoommateCalls({ socket, token, notify }) {
   const [call, setCall] = useState(null);

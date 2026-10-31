@@ -8,7 +8,7 @@ import { UserName, formatName } from "../components/UserDisplay";
 import "./Requests.css";
 import { useFeedback } from "../hooks/useFeedback";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 
 export default function Requests() {
   const [requests, setRequests] = useState([]);

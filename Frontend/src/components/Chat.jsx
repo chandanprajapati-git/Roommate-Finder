@@ -12,7 +12,7 @@ import { useDismissiblePopup } from "../hooks/useDismissiblePopup";
 import { useFeedback } from "../hooks/useFeedback";
 import { useCallControls } from "../hooks/useCallControls";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 
 const getId = (value) => {
   return typeof value === "object" ? value?._id : value;

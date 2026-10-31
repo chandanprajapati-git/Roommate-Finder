@@ -1,8 +1,10 @@
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+
 const express = require("express");
 const cors = require("cors");
 const { dbConnection } = require("./config/dbConn");
-require("dotenv").config();
-
+const uploadRoute = require("./routes/uploadRoute");
 const app = express();
 const http = require("http");
 const { initSocket } = require("./config/socket");
@@ -10,6 +12,7 @@ const { initSocket } = require("./config/socket");
 const userRoute = require("./routes/userRoute");
 const requestRoute = require("./routes/requestRoute");
 const messageRoute = require("./routes/messageRoute");
+const callRoute = require("./routes/callRoute");
 
 const server = http.createServer(app);
 
@@ -29,6 +32,8 @@ dbConnection();
 app.use("/api/message", messageRoute);
 app.use("/api/request", requestRoute);
 app.use("/api/user", userRoute);
+app.use("/api/upload", uploadRoute);
+app.use("/api/calls", callRoute);
 
 app.get("/", (req, res) => {
   res.send("Welcome to Home page");

@@ -5,6 +5,7 @@ import Select from "react-select";
 import { State, City } from "country-state-city";
 import "./Signup.css";
 import { useFeedback } from "../hooks/useFeedback";
+import { API_BASE_URL } from "../config/api.js";
 
 function Signup() {
   const [formData, setFormData] = useState({
@@ -73,7 +74,7 @@ function Signup() {
       setLoading(true);
 
       const response = await axios.post(
-        "http://localhost:5000/api/user/signup",
+        `${API_BASE_URL}/user/signup`,
         {
           ...formData,
           name: formData.name.trim(),

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { API_BASE_URL } from "../config/api.js";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
@@ -17,7 +18,7 @@ export default function Friends() {
 
   const fetchFriends = useCallback(async () => {
     try {
-      const { data } = await axios.get("http://localhost:5000/api/request/accepted", { headers: { Authorization: `Bearer ${token}` } });
+      const { data } = await axios.get(`${API_BASE_URL}/request/accepted`, { headers: { Authorization: `Bearer ${token}` } });
       setFriends(data.users || []);
       setError("");
     } catch (err) { setError(err.response?.data?.message || "Could not load friends."); }

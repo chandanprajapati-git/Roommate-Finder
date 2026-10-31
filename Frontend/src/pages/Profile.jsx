@@ -9,7 +9,7 @@ import { useDismissiblePopup } from "../hooks/useDismissiblePopup";
 import { useFeedback } from "../hooks/useFeedback";
 import "./Profile.css";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 
 function Profile() {
   const navigate = useNavigate();

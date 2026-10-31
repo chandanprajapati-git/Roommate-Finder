@@ -14,10 +14,22 @@ const requestSchema = new Schema(
       required: true,
     },
 
+    pairKey: {
+      type: String,
+      select: false,
+      unique: true,
+      sparse: true,
+    },
+
     note: {
       type: String,
       trim: true,
-      maxlength: 500,
+      maxlength: 300,
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
     },
 
     status: {

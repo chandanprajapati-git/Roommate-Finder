@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import { API_ORIGIN } from "../config/api.js";
 
 const SocketContext = createContext(null);
-const SOCKET_URL = "http://localhost:5000";
 
 export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
@@ -21,7 +21,7 @@ export function SocketProvider({ children }) {
 
       if (!token) return;
 
-      const nextSocket = io(SOCKET_URL, { auth: { token }, reconnection: true });
+      const nextSocket = io(API_ORIGIN, { auth: { token }, reconnection: true });
       socketRef.current = nextSocket;
       setSocket(nextSocket);
     };

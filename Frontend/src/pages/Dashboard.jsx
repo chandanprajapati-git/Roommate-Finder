@@ -11,7 +11,7 @@ import { useDismissiblePopup } from "../hooks/useDismissiblePopup";
 import { useFeedback } from "../hooks/useFeedback";
 import "./Dashboard.css";
 
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "../config/api.js";
 const EMPTY_FILTERS = { minAge: "", maxAge: "", gender: "", minVacancies: "", activeOnly: true };
 
 function Dashboard() {

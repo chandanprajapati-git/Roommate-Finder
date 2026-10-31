@@ -1,5 +1,4 @@
 const jwt =require("jsonwebtoken")
-require("dotenv").config()
 
 const authmiddleware=(req,res,next)=>{
   try{
