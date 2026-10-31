@@ -15,13 +15,14 @@ const messageRoute = require("./routes/messageRoute");
 const callRoute = require("./routes/callRoute");
 
 const server = http.createServer(app);
+const allowedOrigins = [
+  "http://localhost:5173",
+  process.env.FRONTEND_URL || "https://roommate-finder-frontend-liart.vercel.app",
+];
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://roommate-finder-frontend-liart.vercel.app"
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })

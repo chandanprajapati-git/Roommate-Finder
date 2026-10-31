@@ -22,6 +22,17 @@ export function SocketProvider({ children }) {
       if (!token) return;
 
       const nextSocket = io(API_ORIGIN, { auth: { token }, reconnection: true });
+      nextSocket.on("connect", () => {
+  console.log("Socket connected:", nextSocket.id);
+});
+
+nextSocket.on("connect_error", (error) => {
+  console.error("Socket connection error:", error.message);
+});
+
+nextSocket.on("disconnect", (reason) => {
+  console.log("Socket disconnected:", reason);
+});
       socketRef.current = nextSocket;
       setSocket(nextSocket);
     };

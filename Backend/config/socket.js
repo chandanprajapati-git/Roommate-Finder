@@ -89,7 +89,10 @@ const emitUnreadCounts = async (userId) => {
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "http://localhost:5173",
+      origin: [
+        "http://localhost:5173",
+        process.env.FRONTEND_URL || "https://roommate-finder-frontend-liart.vercel.app",
+      ],
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -124,7 +127,7 @@ const initSocket = (server) => {
   io.on("connection", (socket) => {
     const userId = socket.userId.toString();
 
-    console.log("User connected:", userId);
+      console.info("Socket connected for user:", userId);
 
 
     // STORE ONLINE USER
@@ -134,15 +137,17 @@ const initSocket = (server) => {
 
     onlineUsers.get(userId).add(socket.id);
 
-    io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+    const currentOnlineUsers = Array.from(onlineUsers.keys());
+    console.info("User registered online:", { userId, socketCount: onlineUsers.get(userId).size });
+    console.info("Online users updated:", { count: currentOnlineUsers.length, users: currentOnlineUsers });
+    io.emit("onlineUsers", currentOnlineUsers);
 
 
     // SEND ONLINE USERS
     socket.on("getOnlineUsers", () => {
-      socket.emit(
-        "onlineUsers",
-        Array.from(onlineUsers.keys())
-      );
+      const users = Array.from(onlineUsers.keys());
+      console.info("Online users snapshot requested:", { userId, count: users.length });
+      socket.emit("onlineUsers", users);
     });
 
 
@@ -345,7 +350,7 @@ const initSocket = (server) => {
         // UPDATE RECEIVER UNREAD COUNTS
         await emitUnreadCounts(userId);
 
-        console.log("Message delivered:", messageId);
+        console.info("Message delivery acknowledged:", { messageId: String(messageId), receiverId: userId, senderId: message.sender.toString() });
 
       } catch (error) {
         console.log("Delivery error:", error.message);
@@ -390,7 +395,7 @@ const initSocket = (server) => {
         // UPDATE RECEIVER UNREAD COUNTS
         await emitUnreadCounts(userId);
 
-        console.log("Message read:", messageId);
+        console.info("Message read acknowledged:", { messageId: String(messageId), receiverId: userId, senderId: message.sender.toString() });
 
       } catch (error) {
         console.log("Read error:", error.message);
@@ -419,10 +424,10 @@ const initSocket = (server) => {
         }
       }
 
-      io.emit("onlineUsers", Array.from(onlineUsers.keys()));
-
-      console.log("User disconnected:", userId);
-      console.log("Online Users:", onlineUsers);
+      const currentOnlineUsers = Array.from(onlineUsers.keys());
+      io.emit("onlineUsers", currentOnlineUsers);
+      console.info("Socket disconnected:", { userId, remainingSockets: userSockets?.size || 0 });
+      console.info("Online users updated:", { count: currentOnlineUsers.length, users: currentOnlineUsers });
     });
 
   });

@@ -183,7 +183,7 @@ const Chat = () => {
   useEffect(() => {
     if (!token || !myId) return;
     if (!socket) return;
-    const eventNames = ["connect", "connect_error", "onlineUsers", "unreadCounts", "receiveMessage", "messageStatusUpdated", "userTyping", "userStoppedTyping", "roommateConnectionRemoved", "chatDeleted", "roommateRequestAccepted", "roomAvailabilityUpdated"];
+    const eventNames = ["connect", "onlineUsers", "unreadCounts", "receiveMessage", "messageStatusUpdated", "userTyping", "userStoppedTyping", "roommateConnectionRemoved", "chatDeleted", "roommateRequestAccepted", "roomAvailabilityUpdated"];
     const priorListeners = Object.fromEntries(eventNames.map((name) => [name, socket.listeners(name)]));
 
     socketRef.current = socket;
@@ -193,13 +193,9 @@ const Chat = () => {
       socket.emit("getOnlineUsers");
       socket.emit("getUnreadCounts");
     });
-    if (socket.connected) { socket.emit("getOnlineUsers"); socket.emit("getUnreadCounts"); }
-
-    socket.on("connect_error", (error) => {
-      console.log("Socket connection error:", error.message);
-    });
-
+    // Listen before requesting the initial online-user snapshot.
     socket.on("onlineUsers", (users) => {
+      console.info("Online users received:", { count: users?.length || 0, users: users || [] });
       setOnlineUsers(users || []);
     });
 
@@ -207,9 +203,16 @@ const Chat = () => {
       setUnreadCounts(counts || {});
     });
 
+    // Request the current snapshot only after the listeners are ready. The
+    // connect handler above repeats this after every reconnect.
+    if (socket.connected) {
+      socket.emit("getOnlineUsers");
+      socket.emit("getUnreadCounts");
+    }
+
     // RECEIVE NEW MESSAGES
     socket.on("receiveMessage", (newMessage) => {
-      console.log("New message received:", newMessage);
+      console.log("Chat message received:", { messageId: String(newMessage?._id || ""), senderId: String(getId(newMessage?.sender) || ""), receiverId: String(getId(newMessage?.receiver) || "") });
 
       const senderId = String(getId(newMessage.sender));
       const receiverId = String(getId(newMessage.receiver));
@@ -257,8 +260,10 @@ const Chat = () => {
       // UPDATE DELIVERY / READ STATUS
       if (isIncomingMessage) {
         if (isActiveConversation) {
+          console.info("Acknowledging message as read:", { messageId: String(newMessage._id) });
           socket.emit("messageRead", newMessage._id);
         } else {
+          console.info("Acknowledging message as delivered:", { messageId: String(newMessage._id) });
           socket.emit("messageDelivered", newMessage._id);
         }
       }
@@ -279,6 +284,7 @@ const Chat = () => {
 
     // UPDATE MESSAGE STATUS
     socket.on("messageStatusUpdated", ({ messageId, status }) => {
+      console.info("Chat message status updated:", { messageId: String(messageId), status });
       setMessages((prev) =>
         prev.map((msg) =>
           String(msg._id) === String(messageId)

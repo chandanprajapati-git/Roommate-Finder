@@ -71,14 +71,19 @@ const sendMessage = async (req, res) => {
       } : undefined,
     });
 
-    // SEND REAL-TIME MESSAGE TO RECEIVER
+    console.info("Message saved successfully:", { messageId: newMessage._id.toString(), senderId: sender.toString(), receiverId: receiver.toString() });
+
+    // Persist first, then emit to every active session for this user.
     const io = getIO();
     const receiverSockets = onlineUsers.get(receiver.toString());
 
-    if (receiverSockets) {
+    if (io && receiverSockets?.size) {
       receiverSockets.forEach((socketId) => {
         io.to(socketId).emit("receiveMessage", newMessage);
       });
+      console.info("Message emitted to receiver:", { messageId: newMessage._id.toString(), receiverId: receiver.toString(), socketCount: receiverSockets.size });
+    } else {
+      console.info("Message recipient is currently offline:", { messageId: newMessage._id.toString(), receiverId: receiver.toString() });
     }
 
     return res.status(200).json({
